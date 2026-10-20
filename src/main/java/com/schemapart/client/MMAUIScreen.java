@@ -8,6 +8,8 @@ import com.schemapart.core.MapArtService;
 import com.schemapart.core.PreparedImage;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
@@ -20,7 +22,7 @@ import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
 /** Preview + parameters + schematic generation. */
-public final class MapArtScreen extends SpScreen {
+public final class MMAUIScreen extends SpScreen {
     private final Path imagePath;
     private final String imageName;
     private PreparedImage prepared;
@@ -31,6 +33,8 @@ public final class MapArtScreen extends SpScreen {
     private String status = "";
     private int statusColor = MUTED;
     private boolean generating;
+    private boolean namePromptOpen;
+    private String nameText = "";
 
     private double zoom = 1.0;
     private double panX;
@@ -44,7 +48,7 @@ public final class MapArtScreen extends SpScreen {
     private int previewW;
     private int previewH;
 
-    public MapArtScreen(Path imagePath) {
+    public MMAUIScreen(Path imagePath) {
         super(Component.translatable("schemapart.mapart.title"));
         this.imagePath = imagePath;
         this.imageName = FileOps.safeBaseName(imagePath.getFileName().toString());
@@ -114,8 +118,8 @@ public final class MapArtScreen extends SpScreen {
 
         g.fill(0, 0, width, 40, 0xF01B1E23);
         g.fill(0, 39, width, 40, BORDER);
-        textShadow(g, "MAP ART", 10, 9, ACCENT);
-        text(g, trim(imageName, Math.max(120, width / 3)), 86, 11, MUTED);
+        textShadow(g, "MMAUI", 10, 9, ACCENT);
+        text(g, trim(imageName, Math.max(120, width / 3)), 64, 11, MUTED);
         textRight(g, "ESC 返回文件浏览器", width - 10, 12, MUTED);
 
         int margin = 8;
@@ -206,7 +210,8 @@ public final class MapArtScreen extends SpScreen {
         int startH = compact ? 24 : 28;
         int startY = panelY + panelH - startH - 6;
         button(g, rightX + 12, startY, startW, startH,
-                generating ? "正在生成…" : "开始制作", !generating && plan != null, this::generate);
+                generating ? "正在生成…" : "开始制作", !generating && plan != null, this::openNamePrompt);
+        if (namePromptOpen) drawNamePrompt(g);
     }
 
     private int parameterRow(GuiGraphics g, int x, int y, int controlRight, int controlW,
@@ -304,19 +309,65 @@ public final class MapArtScreen extends SpScreen {
         panY = 0;
     }
 
-    private void generate() {
+    private void openNamePrompt() {
+        if (plan == null || generating) return;
+        nameText = imageName == null || imageName.isBlank() ? "mapart" : imageName;
+        namePromptOpen = true;
+    }
+
+    private void closeNamePrompt() {
+        namePromptOpen = false;
+    }
+
+    private void confirmNamePrompt() {
+        String name = nameText == null ? "" : nameText.trim();
+        if (name.isEmpty()) {
+            status = "文件名不能为空";
+            statusColor = WARN;
+            return;
+        }
+        namePromptOpen = false;
+        generate(FileOps.safeBaseName(name));
+    }
+
+    private void drawNamePrompt(GuiGraphics g) {
+        dim(g);
+        int w = 360;
+        int h = 126;
+        int x = (width - w) / 2;
+        int y = (height - h) / 2;
+        panel(g, x, y, w, h);
+        text(g, "命名投影文件", x + 14, y + 12, TEXT);
+        text(g, "输入文件名，回车生成，ESC 取消", x + 14, y + 28, MUTED);
+        int fx = x + 14;
+        int fy = y + 50;
+        g.fill(fx, fy, x + w - 14, fy + 22, 0xFF15181D);
+        outline(g, fx, fy, x + w - 14 - fx, 22, ACCENT);
+        text(g, trim(nameText, w - 40), fx + 6, fy + 7, TEXT);
+        if ((System.currentTimeMillis() / 500) % 2 == 0) {
+            int cx = fx + 6 + font.width(trim(nameText, w - 40));
+            g.fill(cx, fy + 5, cx + 1, fy + 19, ACCENT);
+        }
+        int bw = 92;
+        button(g, x + w - 14 - bw * 2 - 8, y + h - 32, bw, 22, "取消", true, this::closeNamePrompt);
+        button(g, x + w - 14 - bw, y + h - 32, bw, 22, "生成", true, this::confirmNamePrompt);
+    }
+
+    private void generate(String name) {
         if (plan == null || generating) return;
         generating = true;
         status = "正在写入 Litematica 原理图…";
         statusColor = WARN;
-        MapArtPlan snapshot = plan;
+        String base = name == null || name.isBlank() ? imageName : name;
+        MapArtPlan snapshot = new MapArtPlan(FileOps.safeBaseName(base), plan.width, plan.height,
+                plan.blockIndex, plan.blocks, plan.previewArgb, plan.counts);
         CompletableFuture.runAsync(() -> {
             try {
                 MapArtService.Result result = MapArtService.write(snapshot, SpPaths.maticDir, SpPaths.dataVersion());
                 boolean copied = false;
                 if (SchemapartClient.settings.copyToLitematica
                         && FabricLoader.getInstance().isModLoaded("litematica")) {
-                    Path schematics = SpPaths.gameDir.resolve("schematics");
+                    Path schematics = SpPaths.schematicsDir;
                     Files.createDirectories(schematics);
                     Path target = FileOps.unique(schematics,
                             FileOps.safeBaseName(result.path().getFileName().toString()), ".litematic");
@@ -346,6 +397,9 @@ public final class MapArtScreen extends SpScreen {
         double mx = event.x();
         double my = event.y();
         int button = event.button();
+        if (namePromptOpen) {
+            return runClick(mx, my, button) || super.mouseClicked(event, doubleClick);
+        }
         if (dragging) dragging = false;
         if (inside(mx, my, previewX, previewY, previewW, previewH)) {
             if (button == 1) {
@@ -394,8 +448,41 @@ public final class MapArtScreen extends SpScreen {
     }
 
     @Override
+    public boolean keyPressed(KeyEvent event) {
+        int keyCode = event.key();
+        if (namePromptOpen) {
+            if (keyCode == 256) {
+                closeNamePrompt();
+                return true;
+            }
+            if (keyCode == 257 || keyCode == 335) {
+                confirmNamePrompt();
+                return true;
+            }
+            if (keyCode == 259) {
+                if (!nameText.isEmpty()) nameText = nameText.substring(0, nameText.length() - 1);
+                return true;
+            }
+            return true;
+        }
+        return super.keyPressed(event);
+    }
+
+    @Override
+    public boolean charTyped(CharacterEvent event) {
+        char codePoint = (char) event.codepoint();
+        if (namePromptOpen) {
+            if (codePoint >= 32 && codePoint != 127 && nameText.length() < 80) {
+                nameText += codePoint;
+            }
+            return true;
+        }
+        return super.charTyped(event);
+    }
+
+    @Override
     public void onClose() {
         closeTextures();
-        minecraft.setScreen(new MainScreen());
+        minecraft.setScreen(new MAUIScreen());
     }
 }

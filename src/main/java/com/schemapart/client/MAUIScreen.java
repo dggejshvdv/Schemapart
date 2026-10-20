@@ -1,10 +1,11 @@
 package com.schemapart.client;
 
 import com.schemapart.core.FileOps;
+import net.minecraft.util.Util;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 import java.io.IOException;
@@ -14,15 +15,18 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-/** Two-pane picture / schematic browser. */
-public final class MainScreen extends SpScreen {
+/**
+ * MAUI: picture browser for the image map-art workflow.
+ *
+ * <p>The schematic output folder is intentionally not shown here anymore; the
+ * generated files are opened from MWMAUI/MMAUI or the system file manager.</p>
+ */
+public final class MAUIScreen extends SpScreen {
     private static final int CELL_W = 78;
     private static final int CELL_H = 90;
 
     private List<Path> images = List.of();
-    private List<Path> schematics = List.of();
-    private int leftScroll;
-    private int rightScroll;
+    private int scroll;
     private Path selected;
     private Path lastClickPath;
     private long lastClickTime;
@@ -31,20 +35,17 @@ public final class MainScreen extends SpScreen {
 
     private Path clipboard;
     private boolean clipboardCut;
-    private Side contextSide;
+    private boolean contextOpen;
     private Path contextTarget;
     private int contextX;
     private int contextY;
-    private int contextW = 124;
+    private int contextW = 150;
     private int contextH;
 
     private Path renameTarget;
     private String renameText = "";
-    private boolean renameFocus;
 
-    private enum Side {LEFT, RIGHT}
-
-    public MainScreen() {
+    public MAUIScreen() {
         super(Component.translatable("schemapart.main.title"));
     }
 
@@ -57,8 +58,12 @@ public final class MainScreen extends SpScreen {
     }
 
     private void reload() {
+        try {
+            Files.createDirectories(SpPaths.picturesDir);
+        } catch (IOException e) {
+            setStatus("无法创建目录: " + e.getMessage(), DANGER);
+        }
         images = FileOps.listFiles(SpPaths.picturesDir, FileOps.IMAGE_EXTENSIONS);
-        schematics = FileOps.listFiles(SpPaths.maticDir, FileOps.SCHEMATIC_EXTENSIONS);
         if (selected != null && !Files.exists(selected)) selected = null;
     }
 
@@ -77,98 +82,87 @@ public final class MainScreen extends SpScreen {
         int headerH = 44;
         int footerH = 26;
         int margin = 8;
-        int gap = 8;
         int panelY = headerH + margin;
         int panelH = Math.max(80, height - panelY - footerH - margin);
-        int leftW = Math.max(180, (width - margin * 2 - gap) / 2);
-        int rightW = Math.max(160, width - margin * 2 - gap - leftW);
-        int leftX = margin;
-        int rightX = leftX + leftW + gap;
+        drawHeader(g);
+        drawBrowser(g, margin, panelY, width - margin * 2, panelH);
+        drawFooter(g);
 
-        drawHeader(g, margin, leftW, rightX, rightW);
-        drawBrowser(g, leftX, panelY, leftW, panelH, Side.LEFT, images);
-        drawBrowser(g, rightX, panelY, rightW, panelH, Side.RIGHT, schematics);
-        drawFooter(g, margin, width - margin, height);
-
-        if (contextSide != null) drawContext(g);
+        if (contextOpen) drawContext(g);
         if (renameTarget != null) drawRename(g);
     }
 
-    private void drawHeader(GuiGraphics g, int x, int leftW, int rightX, int rightW) {
+    private void drawHeader(GuiGraphics g) {
         g.fill(0, 0, width, 40, 0xF01B1E23);
         g.fill(0, 39, width, 40, BORDER);
-        textShadow(g, "SCHEMAPART", x, 9, ACCENT);
-        int btnW = 64;
-        int btnH = 22;
-        int bx = x + 92;
-        button(g, bx, 9, btnW, btnH, "设置", true, () -> minecraft.setScreen(new SettingsScreen(this)));
-        String counts = "图片 " + images.size() + "   ·   原理图 " + schematics.size();
-        textRight(g, counts, rightX + rightW, 12, MUTED);
+        textShadow(g, "SCHEMAPART · MAUI", 8, 9, ACCENT);
+
+        int bw = 44;
+        int gap = 4;
+        int x = width - 8 - bw;
+        button(g, x, 9, bw, 24, "返回", true, this::onClose);
+        x -= bw + gap;
+        button(g, x, 9, bw, 24, "设置", true, () -> minecraft.setScreen(new SettingsScreen(this)));
+        x -= bw + gap;
+        button(g, x, 9, 52, 24, "打开目录", true, this::openPicturesFolder);
+        x -= 52 + gap;
+        button(g, x, 9, 44, 24, "刷新", true, () -> {
+            reload();
+            setStatus("已刷新: " + images.size() + " 张图片", ACCENT);
+        });
+        textRight(g, "图片 " + images.size(), width - 8 - (bw * 2 + 52 + 44 + gap * 3) - 12, 12, MUTED);
     }
 
-    private void drawFooter(GuiGraphics g, int left, int right, int height) {
-        g.fill(0, height - 24, width, height, 0xF01B1E23);
-        g.fill(0, height - 25, width, height - 24, BORDER);
-        if (!status.isEmpty()) {
-            text(g, status, left, height - 17, statusColor);
-        } else {
-            text(g, "双击图片开始制作 · 右键文件管理 · 空白处右键粘贴", left, height - 17, MUTED);
-        }
-        if (clipboard != null) {
-            String clip = (clipboardCut ? "剪切: " : "复制: ") + clipboard.getFileName();
-            textRight(g, clip, right, height - 17, clipboardCut ? WARN : ACCENT);
-        }
-    }
-
-    private void drawBrowser(GuiGraphics g, int x, int y, int w, int h, Side side, List<Path> files) {
+    private void drawBrowser(GuiGraphics g, int x, int y, int w, int h) {
         panel(g, x, y, w, h);
-        String title = side == Side.LEFT ? "图片  ·  pictures" : "原理图  ·  matic";
         g.fill(x + 1, y + 1, x + w - 1, y + 24, 0xFF272C34);
-        text(g, title, x + 9, y + 8, TEXT);
-        textRight(g, files.size() + "", x + w - 9, y + 8, MUTED);
+        text(g, "图片  ·  pictures", x + 9, y + 8, TEXT);
+        textRight(g, images.size() + "", x + w - 9, y + 8, MUTED);
 
         int contentY = y + 25;
         int contentH = h - 26;
         int pad = 8;
         int cols = Math.max(1, (w - pad * 2 + 6) / (CELL_W + 6));
-        int rows = (files.size() + cols - 1) / cols;
+        int rows = (images.size() + cols - 1) / cols;
         int contentTotal = rows * CELL_H;
-        int scroll = side == Side.LEFT ? leftScroll : rightScroll;
         int maxScroll = Math.max(0, contentTotal - contentH + pad);
         scroll = Math.max(0, Math.min(scroll, maxScroll));
-        if (side == Side.LEFT) leftScroll = scroll; else rightScroll = scroll;
 
-        // Blank-area right click = paste.
-        clickable(x + 2, contentY, w - 4, contentH - 2, 1, () -> openBlankContext(side, x + 2, contentY));
+        clickable(x + 2, contentY, w - 4, contentH - 2, 1, () -> {
+            contextOpen = true;
+            contextTarget = null;
+            contextX = mouseX;
+            contextY = mouseY;
+        });
         clickable(x + 2, contentY, w - 4, contentH - 2, 0, () -> {
             selected = null;
-            contextSide = null;
+            contextOpen = false;
         });
 
         g.enableScissor(x + 2, contentY, x + w - 2, y + h - 2);
-        if (files.isEmpty()) {
-            String line1 = side == Side.LEFT ? "把 PNG / JPG 图片放进" : "生成的原理图会出现在这里";
-            String line2 = side == Side.LEFT ? "mapart/pictures 文件夹" : "mapart/matic 文件夹";
-            textCentered(g, line1, x + w / 2, contentY + contentH / 2 - 14, MUTED);
-            textCentered(g, line2, x + w / 2, contentY + contentH / 2 + 2, MUTED);
+        if (images.isEmpty()) {
+            textCentered(g, "把 PNG / JPG 图片拖进窗口", x + w / 2, contentY + contentH / 2 - 24, MUTED);
+            textCentered(g, "或右键空白处 → 打开文件夹", x + w / 2, contentY + contentH / 2 - 8, MUTED);
+            textCentered(g, trim(SpPaths.picturesDir.toString(), w - 24),
+                    x + w / 2, contentY + contentH / 2 + 12, 0xFF66707D);
         }
         int startRow = scroll / CELL_H;
         int endRow = Math.min(rows, startRow + contentH / CELL_H + 2);
         for (int row = startRow; row < endRow; row++) {
             for (int col = 0; col < cols; col++) {
                 int index = row * cols + col;
-                if (index >= files.size()) break;
-                Path path = files.get(index);
+                if (index >= images.size()) break;
+                Path path = images.get(index);
                 int cx = x + pad + col * (CELL_W + 6);
                 int cy = contentY + pad + row * CELL_H - scroll;
-                drawFileCell(g, cx, cy, side, path);
+                drawFileCell(g, cx, cy, path);
             }
         }
         g.disableScissor();
         drawScrollbar(g, x + w - 4, contentY + 2, contentH - 4, scroll, maxScroll);
     }
 
-    private void drawFileCell(GuiGraphics g, int x, int y, Side side, Path path) {
+    private void drawFileCell(GuiGraphics g, int x, int y, Path path) {
         boolean selectedCell = path.equals(selected);
         boolean hovered = hover(x, y, CELL_W, CELL_H - 2);
         int fill = selectedCell ? 0xFF2E4A40 : hovered ? 0xFF2E343C : 0xFF24282F;
@@ -178,54 +172,29 @@ public final class MainScreen extends SpScreen {
         int thumb = 64;
         int tx = x + (CELL_W - thumb) / 2;
         int ty = y + 4;
-        if (side == Side.LEFT) {
-            SpTextures.Entry entry = SpTextures.fromFile(path, thumb);
-            if (entry != null) entry.draw(g, tx, ty, thumb, thumb);
-            else drawMissing(g, tx, ty, thumb);
-        } else {
-            drawSchematicIcon(g, tx, ty, thumb, path);
-        }
+        SpTextures.Entry entry = SpTextures.fromFile(path, thumb);
+        if (entry != null) entry.draw(g, tx, ty, thumb, thumb);
+        else drawMissing(g, tx, ty, thumb);
 
-        String name = path.getFileName().toString();
-        String shown = trim(name, CELL_W - 8);
+        String shown = trim(path.getFileName().toString(), CELL_W - 8);
         textCentered(g, shown, x + CELL_W / 2, y + CELL_H - 18, hovered ? TEXT : MUTED);
 
         clickable(x, y, CELL_W, CELL_H - 2, 0, () -> {
             selected = path;
-            contextSide = null;
+            contextOpen = false;
             long now = System.currentTimeMillis();
             boolean doubleClick = path.equals(lastClickPath) && now - lastClickTime < 360;
             lastClickPath = path;
             lastClickTime = now;
-            if (doubleClick) {
-                if (side == Side.LEFT) {
-                    SchemapartClient.openMapArt(path);
-                } else {
-                    showSchematicInfo(path);
-                }
-            }
+            if (doubleClick) SchemapartClient.openMapArt(path);
         });
         clickable(x, y, CELL_W, CELL_H - 2, 1, () -> {
             selected = path;
-            contextSide = side;
+            contextOpen = true;
             contextTarget = path;
             contextX = mouseX;
             contextY = mouseY;
-            contextH = 4 * 20 + 8;
         });
-    }
-
-    private void drawSchematicIcon(GuiGraphics g, int x, int y, int size, Path path) {
-        g.fill(x, y, x + size, y + size, 0xFF1A1D22);
-        for (int row = 0; row < 8; row++) {
-            for (int col = 0; col < 8; col++) {
-                int c = ((row + col) & 1) == 0 ? 0xFF2E3C36 : 0xFF27302C;
-                g.fill(x + 4 + col * 7, y + 6 + row * 7, x + 4 + col * 7 + 6, y + 6 + row * 7 + 6, c);
-            }
-        }
-        g.fill(x + 8, y + 58, x + size - 8, y + 64, 0xFF1A1D22);
-        String ext = FileOps.extension(path).replace(".", "").toUpperCase(Locale.ROOT);
-        textCentered(g, ext, x + size / 2, y + 54, ACCENT);
     }
 
     private void drawMissing(GuiGraphics g, int x, int y, int size) {
@@ -241,26 +210,21 @@ public final class MainScreen extends SpScreen {
         g.fill(x, thumbY, x + 2, thumbY + thumbH, BORDER_HI);
     }
 
-    private void openBlankContext(Side side, int x, int y) {
-        contextSide = side;
-        contextTarget = null;
-        contextX = mouseX;
-        contextY = mouseY;
-        contextH = 28;
-    }
-
     private void drawContext(GuiGraphics g) {
         List<String> labels = new ArrayList<>();
         if (contextTarget == null) {
+            labels.add("打开文件夹");
             labels.add("粘贴");
-            contextH = 28;
+            labels.add("刷新");
+            labels.add("设置");
         } else {
             labels.add("重命名");
             labels.add("剪切");
             labels.add("复制");
             labels.add("删除");
-            contextH = labels.size() * 20 + 8;
         }
+        contextW = 150;
+        contextH = labels.size() * 20 + 8;
         int x = Math.max(4, Math.min(contextX, width - contextW - 4));
         int y = Math.max(4, Math.min(contextY, height - contextH - 4));
         contextX = x;
@@ -282,8 +246,18 @@ public final class MainScreen extends SpScreen {
     private void contextAction(String label) {
         playClick();
         if (contextTarget == null) {
-            paste();
-            contextSide = null;
+            switch (label) {
+                case "打开文件夹" -> openPicturesFolder();
+                case "粘贴" -> paste();
+                case "刷新" -> {
+                    reload();
+                    setStatus("已刷新: " + images.size() + " 张图片", ACCENT);
+                }
+                case "设置" -> minecraft.setScreen(new SettingsScreen(this));
+                default -> {
+                }
+            }
+            contextOpen = false;
             return;
         }
         Path target = contextTarget;
@@ -312,25 +286,30 @@ public final class MainScreen extends SpScreen {
             default -> {
             }
         }
-        contextSide = null;
+        contextOpen = false;
+    }
+
+    private void openPicturesFolder() {
+        try {
+            Files.createDirectories(SpPaths.picturesDir);
+            Util.getPlatform().openPath(SpPaths.picturesDir);
+            setStatus("已打开: " + SpPaths.picturesDir, ACCENT);
+        } catch (Throwable t) {
+            setStatus("打开文件夹失败: " + t.getMessage(), DANGER);
+        }
     }
 
     private void paste() {
-        if (clipboard == null || contextSide == null) return;
-        Path dir = contextSide == Side.LEFT ? SpPaths.picturesDir : SpPaths.maticDir;
-        String ext = FileOps.extension(clipboard);
-        String bareExt = ext.length() > 1 ? ext.substring(1).toLowerCase(Locale.ROOT) : "";
-        boolean compatible = contextSide == Side.LEFT
-                ? FileOps.IMAGE_EXTENSIONS.contains(bareExt)
-                : FileOps.SCHEMATIC_EXTENSIONS.contains(bareExt);
-        if (!compatible) {
-            setStatus("文件类型与目标文件夹不匹配", DANGER);
+        if (clipboard == null) {
+            setStatus("剪贴板为空", WARN);
             return;
         }
         try {
             Path result = clipboardCut
-                    ? FileOps.move(clipboard, dir, FileOps.safeBaseName(clipboard.getFileName().toString()))
-                    : FileOps.copy(clipboard, dir, FileOps.safeBaseName(clipboard.getFileName().toString()));
+                    ? FileOps.move(clipboard, SpPaths.picturesDir,
+                    FileOps.safeBaseName(clipboard.getFileName().toString()))
+                    : FileOps.copy(clipboard, SpPaths.picturesDir,
+                    FileOps.safeBaseName(clipboard.getFileName().toString()));
             setStatus((clipboardCut ? "已移动: " : "已粘贴: ") + result.getFileName(),
                     clipboardCut ? WARN : ACCENT);
             if (clipboardCut) {
@@ -346,8 +325,7 @@ public final class MainScreen extends SpScreen {
     private void beginRename(Path target) {
         renameTarget = target;
         renameText = target.getFileName().toString();
-        renameFocus = true;
-        contextSide = null;
+        contextOpen = false;
     }
 
     private void drawRename(GuiGraphics g) {
@@ -362,7 +340,7 @@ public final class MainScreen extends SpScreen {
         int fieldX = x + 14;
         int fieldY = y + 48;
         g.fill(fieldX, fieldY, x + w - 14, fieldY + 22, 0xFF15181D);
-        outline(g, fieldX, fieldY, x + w - 14, fieldY + 22, ACCENT);
+        outline(g, fieldX, fieldY, x + w - 14 - fieldX, 22, ACCENT);
         String shown = trim(renameText, w - 40);
         text(g, shown, fieldX + 6, fieldY + 7, TEXT);
         if ((System.currentTimeMillis() / 500) % 2 == 0) {
@@ -370,9 +348,7 @@ public final class MainScreen extends SpScreen {
             g.fill(cx, fieldY + 5, cx + 1, fieldY + 19, ACCENT);
         }
         int bw = 92;
-        button(g, x + w - 14 - bw * 2 - 8, y + h - 34, bw, 22, "取消", true, () -> {
-            renameTarget = null;
-        });
+        button(g, x + w - 14 - bw * 2 - 8, y + h - 34, bw, 22, "取消", true, () -> renameTarget = null);
         button(g, x + w - 14 - bw, y + h - 34, bw, 22, "确认", true, this::finishRename);
     }
 
@@ -397,12 +373,19 @@ public final class MainScreen extends SpScreen {
         }
     }
 
-    private void showSchematicInfo(Path path) {
-        try {
-            setStatus(path.getFileName() + "  ·  " + FileOps.humanSize(Files.size(path))
-                    + "  ·  可直接放入 Litematica 的 schematics 文件夹", ACCENT);
-        } catch (IOException e) {
-            setStatus("无法读取: " + e.getMessage(), DANGER);
+    private void drawFooter(GuiGraphics g) {
+        g.fill(0, height - 24, width, height, 0xF01B1E23);
+        g.fill(0, height - 25, width, height - 24, BORDER);
+        if (!status.isEmpty()) {
+            text(g, trim(status, width - 230), 8, height - 17, statusColor);
+        } else {
+            text(g, "双击制作 · 右键管理 · 拖入图片即可导入", 8, height - 17, MUTED);
+        }
+        if (clipboard != null) {
+            String clip = (clipboardCut ? "剪切: " : "复制: ") + clipboard.getFileName();
+            textRight(g, clip, width - 8, height - 17, clipboardCut ? WARN : ACCENT);
+        } else {
+            textRight(g, "右键空白 → 打开文件夹", width - 8, height - 17, MUTED);
         }
     }
 
@@ -419,26 +402,22 @@ public final class MainScreen extends SpScreen {
             }
             return runClick(mx, my, button) || left;
         }
-        if (contextSide != null) {
-            boolean inMenu = inside(mx, my, contextX, contextY, contextW, contextH);
-            if (inMenu) {
+        if (contextOpen) {
+            if (inside(mx, my, contextX, contextY, contextW, contextH)) {
                 runClick(mx, my, button);
             } else {
-                contextSide = null;
+                contextOpen = false;
             }
             return true;
         }
-        return super.mouseClicked(event, doubleClick) || runClick(mx, my, button);
+        if (runClick(mx, my, button)) return true;
+        return super.mouseClicked(event, doubleClick);
     }
 
     @Override
     public boolean mouseScrolled(double mx, double my, double deltaX, double deltaY) {
-        if (inside(mx, my, 0, 44, width / 2, height - 70)) {
-            leftScroll = Math.max(0, leftScroll - (int) (deltaY * 32));
-            return true;
-        }
-        if (inside(mx, my, width / 2, 44, width / 2, height - 70)) {
-            rightScroll = Math.max(0, rightScroll - (int) (deltaY * 32));
+        if (inside(mx, my, 0, 44, width, height - 70)) {
+            scroll = Math.max(0, scroll - (int) (deltaY * 32));
             return true;
         }
         return false;
@@ -480,8 +459,27 @@ public final class MainScreen extends SpScreen {
     }
 
     @Override
+    public void onFilesDrop(List<Path> paths) {
+        if (paths == null || paths.isEmpty()) return;
+        int imported = 0;
+        for (Path path : paths) {
+            try {
+                if (path == null || !Files.isRegularFile(path)) continue;
+                String ext = FileOps.extension(path).toLowerCase(Locale.ROOT);
+                if (ext.length() < 2 || !FileOps.IMAGE_EXTENSIONS.contains(ext.substring(1))) continue;
+                FileOps.copy(path, SpPaths.picturesDir, FileOps.safeBaseName(path.getFileName().toString()));
+                imported++;
+            } catch (IOException e) {
+                setStatus("导入失败: " + e.getMessage(), DANGER);
+            }
+        }
+        reload();
+        setStatus(imported > 0 ? "已导入 " + imported + " 张图片" : "没有可导入的图片", imported > 0 ? ACCENT : WARN);
+    }
+
+    @Override
     public void onClose() {
         SchemapartClient.saveSettings();
-        super.onClose();
+        minecraft.setScreen(new WelcomeScreen());
     }
 }

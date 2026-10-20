@@ -1,6 +1,9 @@
 {
-  "schemapart.main.title": "Schemapart",
-  "schemapart.mapart.title": "Map Art",
+  "schemapart.main.title": "MAUI · Map Art",
+  "schemapart.mapart.title": "MMAUI · Make Map Art",
   "schemapart.blocks.title": "Block Palette",
-  "schemapart.settings.title": "Schemapart Settings"
+  "schemapart.settings.title": "Schemapart Settings",
+  "schemapart.settings.advanced": "Directories & Shortcut",
+  "schemapart.welcome.title": "Schemapart",
+  "schemapart.wordart.title": "Word Map Art"
 }
