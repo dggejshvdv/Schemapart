@@ -58,18 +58,6 @@ public final class SettingsScreen extends SpScreen {
                 });
         rowY += rowH + (compact ? 2 : 6);
 
-        if (!compact) {
-            text(g, "图片目录", x + 16, rowY + 4, MUTED);
-            text(g, trim(SpPaths.picturesDir.toString(), w - 130), x + 92, rowY + 4, TEXT);
-            rowY += 20;
-            text(g, "原理图目录", x + 16, rowY + 4, MUTED);
-            text(g, trim(SpPaths.maticDir.toString(), w - 130), x + 92, rowY + 4, TEXT);
-            rowY += 20;
-            text(g, "方块数据", x + 16, rowY + 4, MUTED);
-            text(g, trim(SpPaths.blocksJson.toString(), w - 130), x + 92, rowY + 4, TEXT);
-            rowY += 20;
-        }
-
         int actionH = compact ? 20 : 24;
         int actionY = y + h - actionH - (compact ? 8 : 12);
         int rescanW = compact ? 54 : 110;

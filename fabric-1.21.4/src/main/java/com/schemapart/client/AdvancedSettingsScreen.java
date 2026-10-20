@@ -14,6 +14,10 @@ public final class AdvancedSettingsScreen extends SpScreen {
     private int captureKey1 = 77;
     private int captureKey2 = 80;
     private String status = "";
+    private final int[] pathScroll = new int[3];
+    private final int[] pathRowY = new int[3];
+    private int pathAreaX;
+    private int pathAreaW;
 
     public AdvancedSettingsScreen(SettingsScreen parent) {
         super(Component.translatable("schemapart.settings.advanced"));
@@ -53,7 +57,7 @@ public final class AdvancedSettingsScreen extends SpScreen {
         });
         rowY += rowH;
 
-        text(g, "提示：目录支持绝对路径或相对游戏目录的路径；留空恢复默认。",
+        text(g, "提示：滚轮查看完整路径；点击路径或“更改”编辑；留空恢复默认。",
                 x + 16, rowY + 4, MUTED);
         rowY += 20;
 
@@ -71,10 +75,29 @@ public final class AdvancedSettingsScreen extends SpScreen {
     private int drawPathRow(GuiGraphics g, int x, int y, int w, int rowY, int rowH,
                             String label, java.nio.file.Path path, int index) {
         text(g, label, x + 16, rowY + 7, TEXT);
-        text(g, trim(path.toString(), w - 230), x + 112, rowY + 7, MUTED);
+        pathAreaX = x + 112;
+        pathAreaW = Math.max(40, w - 112 - 92);
+        pathRowY[index] = rowY;
+        String value = path.toString();
+        int maxScroll = Math.max(0, font.width(value) - pathAreaW);
+        pathScroll[index] = Math.max(0, Math.min(pathScroll[index], maxScroll));
+        g.enableScissor(pathAreaX, rowY, pathAreaX + pathAreaW, rowY + 22);
+        text(g, value, pathAreaX - pathScroll[index], rowY + 7, MUTED);
+        g.disableScissor();
+        if (maxScroll > 0) {
+            g.fill(pathAreaX, rowY + 21, pathAreaX + pathAreaW, rowY + 22, 0xFF303640);
+            int thumbW = Math.max(12, pathAreaW * pathAreaW / (pathAreaW + maxScroll));
+            int thumbX = pathAreaX + (pathAreaW - thumbW) * pathScroll[index] / maxScroll;
+            g.fill(thumbX, rowY + 21, thumbX + thumbW, rowY + 22, 0xFF6F7A88);
+        }
+        int idx = index;
+        clickable(pathAreaX, rowY, pathAreaW, 22, () -> {
+            editing = idx;
+            editText = currentPath(idx);
+        });
         button(g, x + w - 14 - 70, rowY, 70, 22, "更改", true, () -> {
-            editing = index;
-            editText = currentPath(index);
+            editing = idx;
+            editText = currentPath(idx);
         });
         if (index < 2) {
             g.fill(x + 14, rowY + rowH - 1, x + w - 14, rowY + rowH, 0x22FFFFFF);
@@ -168,6 +191,24 @@ public final class AdvancedSettingsScreen extends SpScreen {
         } catch (Throwable t) {
             return Integer.toString(keyCode);
         }
+    }
+
+    @Override
+    public boolean mouseScrolled(double mx, double my, double deltaX, double deltaY) {
+        for (int i = 0; i < 3; i++) {
+            if (inside(mx, my, pathAreaX, pathRowY[i], pathAreaW, 22)) {
+                String value = switch (i) {
+                    case 0 -> SpPaths.picturesDir.toString();
+                    case 1 -> SpPaths.maticDir.toString();
+                    default -> SpPaths.schematicsDir.toString();
+                };
+                int maxScroll = Math.max(0, font.width(value) - pathAreaW);
+                pathScroll[i] = Math.max(0, Math.min(maxScroll,
+                        pathScroll[i] - (int) Math.signum(deltaY) * 18));
+                return true;
+            }
+        }
+        return super.mouseScrolled(mx, my, deltaX, deltaY);
     }
 
     @Override
