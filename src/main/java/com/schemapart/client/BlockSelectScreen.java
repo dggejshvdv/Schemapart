@@ -42,7 +42,7 @@ public final class BlockSelectScreen extends SpScreen {
     private static final int ROW_GAP = 4;
     private static final int ACTION_GAP = 6;
 
-    private final MapArtScreen parent;
+    private final MMAUIScreen parent;
     private final List<BlockInfo> visible = new ArrayList<>();
     private final boolean[] enabled;
     private final List<ItemStack> icons = new ArrayList<>();
@@ -74,7 +74,7 @@ public final class BlockSelectScreen extends SpScreen {
     private int rowH;
     private int pageCount = 1;
 
-    public BlockSelectScreen(MapArtScreen parent) {
+    public BlockSelectScreen(MMAUIScreen parent) {
         super(Component.translatable("schemapart.blocks.title"));
         this.parent = parent;
         List<BlockInfo> candidates = new ArrayList<>();
