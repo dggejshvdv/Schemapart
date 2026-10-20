@@ -781,7 +781,7 @@ public final class MWMAUIScreen extends SpScreen {
                 boolean copied = false;
                 if (SchemapartClient.settings.copyToLitematica
                         && FabricLoader.getInstance().isModLoaded("litematica")) {
-                    Path schematics = SpPaths.gameDir.resolve("schematics");
+                    Path schematics = SpPaths.schematicsDir;
                     Files.createDirectories(schematics);
                     Path target = FileOps.unique(schematics,
                             FileOps.safeBaseName(written.path().getFileName().toString()), ".litematic");
