@@ -240,11 +240,19 @@ UI 代码按版本分别适配：
 
 自研 NBT / Litematica 写入器：
 
-- Version 6 / SubVersion 1
-- `BlockStatePalette` 使用方块 id
-- `BlockStates` 使用连续 LSB-first 位数组
-- 元数据包含尺寸、方块数、创建时间
-- 支持 `blockIndex < 0` 表示空气
+- 根节点 `Version = 6`、`SubVersion = 1`、`MinecraftDataVersion = 当前版本数据版本`
+- `BlockStatePalette` 是 Compound 列表，每项为 `{Name: "minecraft:xxx"}`
+- palette 第 0 项固定为 `minecraft:air`
+- `BlockStates` 是 LSB-first、连续位打包的 `long[]`，每位宽度为
+  `max(2, ceil(log2(paletteSize)))`，long 之间没有额外填充
+- 单 region `Schemapart`，包含 `Position`、`Size`、`BlockStatePalette`、
+  `BlockStates`、`Entities`、`TileEntities`、待处理 tick 列表
+- `Metadata` 包含 `EnclosingSize`、`RegionCount`、`TotalBlocks`、`TotalVolume`、
+  `TimeCreated`、`TimeModified`、`Name`、`Author`、`Description`、`Software`
+- 内部 `blockIndex < 0` 映射为 palette 0（空气）
+
+已用 `litemapy 0.11.0b0` 加载实际生成文件验证：`256×1×128` 文字画读出
+`TotalVolume = 32768`、`TotalBlocks = 4695`，`BlockStates` 长度为 1024 个 long。
 
 ## 已知限制
 
