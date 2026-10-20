@@ -33,6 +33,13 @@ public final class ArtSettings {
     public boolean dither;
     public boolean autoSaveSelectionOnEsc = true;
     public boolean copyToLitematica = true;
+    /** Optional absolute or game-directory-relative directories; blank = defaults. */
+    public String picturesPath = "";
+    public String maticPath = "";
+    public String schematicsPath = "";
+    /** GLFW key codes for the two-key open-menu chord. */
+    public int shortcutKey1 = 77; // M
+    public int shortcutKey2 = 80; // P
     /** Disabled block ids for the current session. New blocks are enabled by default. */
     public final Set<String> disabled = new LinkedHashSet<>();
     /** Disabled block ids stored as the user default. */
@@ -108,6 +115,11 @@ public final class ArtSettings {
         p.setProperty("autoSaveSelectionOnEsc", Boolean.toString(autoSaveSelectionOnEsc));
         p.setProperty("copyToLitematica", Boolean.toString(copyToLitematica));
         p.setProperty("disabled", String.join("\n", defaultDisabled));
+        p.setProperty("picturesPath", picturesPath == null ? "" : picturesPath);
+        p.setProperty("maticPath", maticPath == null ? "" : maticPath);
+        p.setProperty("schematicsPath", schematicsPath == null ? "" : schematicsPath);
+        p.setProperty("shortcutKey1", Integer.toString(shortcutKey1));
+        p.setProperty("shortcutKey2", Integer.toString(shortcutKey2));
         Files.createDirectories(file.getParent());
         try (OutputStream out = Files.newOutputStream(file)) {
             p.store(out, "Schemapart settings. Do not edit while the game is running.");
@@ -129,6 +141,11 @@ public final class ArtSettings {
         s.dither = Boolean.parseBoolean(p.getProperty("dither", "false"));
         s.autoSaveSelectionOnEsc = Boolean.parseBoolean(p.getProperty("autoSaveSelectionOnEsc", "true"));
         s.copyToLitematica = Boolean.parseBoolean(p.getProperty("copyToLitematica", "true"));
+        s.picturesPath = p.getProperty("picturesPath", "");
+        s.maticPath = p.getProperty("maticPath", "");
+        s.schematicsPath = p.getProperty("schematicsPath", "");
+        s.shortcutKey1 = clampInt(p.getProperty("shortcutKey1"), 77, 1, 1000);
+        s.shortcutKey2 = clampInt(p.getProperty("shortcutKey2"), 80, 1, 1000);
         String raw = p.getProperty("disabled", "");
         for (String line : raw.split("\\R")) {
             if (!line.isBlank()) {

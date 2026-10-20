@@ -1,5 +1,6 @@
 package com.schemapart.client;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import com.schemapart.core.ArtSettings;
 import com.schemapart.core.BlockInfo;
 import com.schemapart.core.CatalogJson;
@@ -25,8 +26,10 @@ public final class SchemapartClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        java.nio.file.Path configFile = FabricLoader.getInstance().getConfigDir()
+                .resolve("schemapart.properties");
+        settings = ArtSettings.load(configFile);
         SpPaths.init();
-        settings = ArtSettings.load(SpPaths.settingsFile);
         ensureScanned();
         LOGGER.info("Schemapart ready, {} map-colour blocks scanned", blocks.size());
     }
@@ -63,17 +66,19 @@ public final class SchemapartClient implements ClientModInitializer {
             chordHeld = false;
             return;
         }
-        boolean down = com.mojang.blaze3d.platform.InputConstants.isKeyDown(mc.getWindow(), GLFW.GLFW_KEY_M)
-                && com.mojang.blaze3d.platform.InputConstants.isKeyDown(mc.getWindow(), GLFW.GLFW_KEY_P);
+        int key1 = settings.shortcutKey1 > 0 ? settings.shortcutKey1 : GLFW.GLFW_KEY_M;
+        int key2 = settings.shortcutKey2 > 0 ? settings.shortcutKey2 : GLFW.GLFW_KEY_P;
+        boolean down = InputConstants.isKeyDown(mc.getWindow(), key1)
+                && InputConstants.isKeyDown(mc.getWindow(), key2);
         if (down && !chordHeld && mc.gui.screen() == null) {
             ensureScanned();
             SpPaths.init();
-            mc.gui.setScreen(new MainScreen());
+            mc.gui.setScreen(new WelcomeScreen());
         }
         chordHeld = down;
     }
 
     public static void openMapArt(java.nio.file.Path image) {
-        Minecraft.getInstance().gui.setScreen(new MapArtScreen(image));
+        Minecraft.getInstance().gui.setScreen(new MMAUIScreen(image));
     }
 }

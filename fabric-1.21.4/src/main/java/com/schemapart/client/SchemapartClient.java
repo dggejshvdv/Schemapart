@@ -26,8 +26,10 @@ public final class SchemapartClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        java.nio.file.Path configFile = FabricLoader.getInstance().getConfigDir()
+                .resolve("schemapart.properties");
+        settings = ArtSettings.load(configFile);
         SpPaths.init();
-        settings = ArtSettings.load(SpPaths.settingsFile);
         ensureScanned();
         LOGGER.info("Schemapart ready, {} map-colour blocks scanned", blocks.size());
     }
@@ -65,17 +67,19 @@ public final class SchemapartClient implements ClientModInitializer {
             return;
         }
         long window = mc.getWindow().getWindow();
-        boolean down = InputConstants.isKeyDown(window, GLFW.GLFW_KEY_M)
-                && InputConstants.isKeyDown(window, GLFW.GLFW_KEY_P);
+        int key1 = settings.shortcutKey1 > 0 ? settings.shortcutKey1 : GLFW.GLFW_KEY_M;
+        int key2 = settings.shortcutKey2 > 0 ? settings.shortcutKey2 : GLFW.GLFW_KEY_P;
+        boolean down = InputConstants.isKeyDown(window, key1)
+                && InputConstants.isKeyDown(window, key2);
         if (down && !chordHeld && mc.screen == null) {
             ensureScanned();
             SpPaths.init();
-            mc.setScreen(new MainScreen());
+            mc.setScreen(new WelcomeScreen());
         }
         chordHeld = down;
     }
 
     public static void openMapArt(java.nio.file.Path image) {
-        Minecraft.getInstance().setScreen(new MapArtScreen(image));
+        Minecraft.getInstance().setScreen(new MMAUIScreen(image));
     }
 }
