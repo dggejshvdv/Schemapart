@@ -72,11 +72,19 @@ public final class SettingsScreen extends SpScreen {
 
         int actionH = compact ? 20 : 24;
         int actionY = y + h - actionH - (compact ? 8 : 12);
-        button(g, x + 16, actionY, compact ? 124 : 150, actionH, "重新扫描方块", true, () -> {
+        int rescanW = compact ? 54 : 110;
+        int advancedW = compact ? 112 : 140;
+        int doneW = compact ? 64 : 80;
+        int gap = 6;
+        int actionX = x + 16;
+        button(g, actionX, actionY, rescanW, actionH, compact ? "重扫" : "重新扫描方块", true, () -> {
             SchemapartClient.rescan();
             status = "扫描完成: " + SchemapartClient.blocks.size() + " 个方块";
         });
-        button(g, x + w - 14 - 80, actionY, 80, actionH, "完成", true, this::onClose);
+        actionX += rescanW + gap;
+        button(g, actionX, actionY, advancedW, actionH, "目录/快捷键", true,
+                () -> minecraft.gui.setScreen(new AdvancedSettingsScreen(this)));
+        button(g, x + w - 14 - doneW, actionY, doneW, actionH, "完成", true, this::onClose);
         if (!status.isEmpty()) {
             text(g, trim(status, w - 160), x + 16, actionY - 15, ACCENT);
         }
